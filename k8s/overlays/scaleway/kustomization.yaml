@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shopix
+resources:
+  - ../../base
+# Sur Scaleway, l'image vient d'un registre — et elle DOIT contenir une variante amd64 :
+# les nœuds Kapsule sont en x86_64, un Mac Apple Silicon produit du arm64.
+# Construisez-la avec ./setup/02b-images-multiarch.sh, puis reportez le nom ici.
+images:
+  - name: shopix
+    newName: rg.fr-par.scw.cloud/shopix-ccs/shopix
+    newTag: 1.0.0
+patches:
+  # Le disque est un volume réseau : le Pod n'a plus besoin de revenir sur le même nœud.
+  - target: { kind: Deployment, name: shopix-commandes }
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+  # Un vrai répartiteur de charge, facturé par Scaleway, avec une IP publique.
+  - target: { kind: Service, name: shopix-front }
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: LoadBalancer

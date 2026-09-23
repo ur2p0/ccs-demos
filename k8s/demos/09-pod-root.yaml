@@ -1,0 +1,16 @@
+# Le nginx officiel, tel qu'on le déploie partout : il démarre en root.
+# En namespace « baseline » il passe ; en « restricted » l'API le refuse à l'admission.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-officiel
+  namespace: shopix
+  labels: { app: nginx-officiel }
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      ports: [{ containerPort: 80 }]
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 128Mi }

@@ -1,0 +1,13 @@
+# Autoscaling horizontal — nécessite metrics-server (addon activé au démarrage).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shopix-api
+  namespace: shopix
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: shopix-api }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }

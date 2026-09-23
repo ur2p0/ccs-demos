@@ -1,0 +1,26 @@
+# La source de données Loki, déclarée nous-mêmes.
+#
+# Pourquoi : loki-stack est installé avec grafana.enabled=false (on réutilise le
+# Grafana de kube-prometheus-stack). Personne ne déclare donc Loki à Grafana, et
+# le panneau « Journaux » du tableau de bord reste vide.
+#
+# Le sidecar de Grafana surveille les ConfigMaps portant l'étiquette
+# grafana_datasource et les charge au vol : pas besoin de redémarrer Grafana.
+# L'uid est figé à « loki » parce que le tableau de bord le référence par uid.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datasource-loki
+  namespace: observabilite
+  labels: { grafana_datasource: "1" }
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.observabilite.svc.cluster.local:3100
+        isDefault: false
+        editable: true

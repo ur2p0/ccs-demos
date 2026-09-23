@@ -1,0 +1,30 @@
+# Un compte de service qui peut REGARDER les Pods, et rien d'autre.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stagiaire
+  namespace: shopix
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lecture-pods
+  namespace: shopix
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: stagiaire-lecture
+  namespace: shopix
+subjects:
+  - kind: ServiceAccount
+    name: stagiaire
+    namespace: shopix
+roleRef:
+  kind: Role
+  name: lecture-pods
+  apiGroup: rbac.authorization.k8s.io

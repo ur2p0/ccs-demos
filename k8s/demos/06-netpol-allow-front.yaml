@@ -1,0 +1,17 @@
+# Zero-Trust, étape 2 : on rouvre explicitement, et uniquement, le flux front → API.
+# Le Pod « tools », lui, reste dehors : c'est la preuve que la règle est nominative.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-allow-front
+  namespace: shopix
+spec:
+  podSelector:
+    matchLabels: { composant: api }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { composant: front }
+      ports:
+        - { protocol: TCP, port: 8080 }

@@ -1,0 +1,23 @@
+# Le Pod « boîte à outils » : la même image que Shopix (déjà dans le cluster),
+# gardée vivante pour lancer des wget / nslookup depuis l'intérieur du réseau.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tools
+  namespace: shopix
+  labels: { app: tools }
+spec:
+  containers:
+    - name: tools
+      image: shopix:1.0.0
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 64Mi }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }

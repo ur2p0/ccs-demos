@@ -1,0 +1,26 @@
+# Démonstration « OOMKilled » : une limite mémoire volontairement trop juste.
+# On appelle ensuite /leak pour faire grossir le processus jusqu'au couperet.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: shopix-gourmand
+  namespace: shopix
+  labels: { app: shopix, composant: gourmand }
+spec:
+  containers:
+    - name: api
+      image: shopix:1.0.0
+      imagePullPolicy: IfNotPresent
+      env:
+        - { name: ROLE, value: api }
+        - { name: DATA_DIR, value: /tmp/shopix }
+        - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { cpu: 500m, memory: 96Mi }   # ← le plafond qui va tomber
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }

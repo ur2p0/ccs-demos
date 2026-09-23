@@ -1,0 +1,16 @@
+# Dit à Prometheus où venir chercher les métriques de Shopix.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shopix
+  namespace: observabilite
+  labels: { release: obs }
+spec:
+  namespaceSelector:
+    matchNames: ["shopix"]
+  selector:
+    matchLabels: { app: shopix }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 10s

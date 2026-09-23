@@ -1,0 +1,19 @@
+# Bruit macOS et sauvegardes
+.DS_Store
+*.bak
+node_modules/
+
+# État Terraform : ne jamais publier
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+
+# Runbook d'animation : document de préparation personnel (nom, client, tarifs
+# éventuels). ArgoCD n'en a pas besoin — il reste dans iCloud.
+RUNBOOK.md
+Runbook-demos-CCS.docx
+make_runbook_docx.js
+
+# Ancien jeu de démonstrations (avril 2026), remplacé par demos/ — conservé en
+# local pour mémoire, inutile dans le dépôt.
+demo-containers/

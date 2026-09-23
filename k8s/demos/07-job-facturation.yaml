@@ -1,0 +1,72 @@
+# La facturation de nuit : un traitement qui finit, et dont le Pod passe en Completed.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: facturation
+  namespace: shopix
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector: { stockage: "oui" }
+      containers:
+        - name: facturation
+          image: shopix:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["node", "worker/worker.js"]
+          env:
+            - { name: MODE, value: facturation }
+            - { name: DATA_DIR, value: /data }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+          volumeMounts: [{ name: donnees, mountPath: /data }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 128Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - name: donnees
+          persistentVolumeClaim: { claimName: shopix-commandes }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: facturation-nuit
+  namespace: shopix
+spec:
+  schedule: "0 2 * * *"      # toutes les nuits à 2 h
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          nodeSelector: { stockage: "oui" }
+          containers:
+            - name: facturation
+              image: shopix:1.0.0
+              imagePullPolicy: IfNotPresent
+              command: ["node", "worker/worker.js"]
+              env:
+                - { name: MODE, value: facturation }
+                - { name: DATA_DIR, value: /data }
+              volumeMounts: [{ name: donnees, mountPath: /data }]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 500m, memory: 128Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: donnees
+              persistentVolumeClaim: { claimName: shopix-commandes }

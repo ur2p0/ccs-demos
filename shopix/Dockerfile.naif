@@ -1,0 +1,15 @@
+# ❌ La version « comme on l'écrit la première fois » — sert de point de comparaison
+# en démonstration (Module 2 : optimiser le build). Ne pas utiliser en production.
+FROM node:24
+
+# 1. On copie TOUT, tout de suite : la moindre modification de code
+#    invalide le cache de l'étape npm qui suit.
+COPY . /app
+WORKDIR /app
+
+# 2. install (et non ci) : installe aussi les dépendances de développement
+RUN npm install
+
+# 3. On tourne en root, et on ne dit pas au moteur comment vérifier la santé
+EXPOSE 8080
+CMD npm start

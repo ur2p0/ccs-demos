@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopix-config
+  namespace: shopix
+data:
+  # Ces valeurs arrivent dans l'application sans reconstruire l'image (Module 4).
+  SHOPIX_MESSAGE: "Le e-commerce qui tient la charge"
+  SHOPIX_COULEUR: "#18534F"
+  # Taux de requêtes de paiement anormalement lentes — l'incident du jour du Module 7.
+  TAUX_LENTEUR: "0.01"

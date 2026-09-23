@@ -1,0 +1,26 @@
+# L'application Shopix, telle qu'ArgoCD la connaît.
+# repoURL est renseigné par ./setup/05b-depot-gitops.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shopix
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ur2p0/ccs-demos.git
+    targetRevision: main
+    path: k8s/overlays/minikube
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shopix
+  syncPolicy:
+    automated:
+      prune: true      # ce qui disparaît de Git disparaît du cluster
+      selfHeal: true   # ce qui dérive dans le cluster est ramené à l'état de Git
+    syncOptions:
+      - CreateNamespace=true
+  # Deux révisions gardées : de quoi montrer un retour arrière en séance.
+  revisionHistoryLimit: 5

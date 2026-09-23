@@ -1,0 +1,14 @@
+{
+  "name": "shopix",
+  "version": "1.0.0",
+  "description": "Application fil rouge de la formation CCS — Containers, Kubernetes, GitOps",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "worker": "node worker/worker.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {}
+}

@@ -1,0 +1,38 @@
+# Générateur de trafic : appelle le paiement en boucle pour faire apparaître
+# l'incident « une requête sur cent » dans les métriques (Module 7).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopix-charge
+  namespace: shopix
+  labels: { app: shopix, composant: charge }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shopix, composant: charge }
+  template:
+    metadata:
+      labels: { app: shopix, composant: charge }
+    spec:
+      containers:
+        - name: charge
+          image: shopix:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "génération de trafic sur shopix-api…"
+              while true; do
+                wget -q -O /dev/null http://shopix-api:8080/api/paiement || true
+                wget -q -O /dev/null http://shopix-api:8080/api/produits || true
+                sleep 0.2
+              done
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 64Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }

@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shopix
+  namespace: shopix
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: shopix.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: shopix-api, port: { number: 8080 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: shopix-front, port: { number: 8080 } } }
