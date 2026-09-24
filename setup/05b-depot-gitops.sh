@@ -24,13 +24,29 @@
 cd "$(dirname "$0")/.." || exit 1
 source lib/demo.sh
 VITESSE=0
+SANS_PAUSE="${SANS_PAUSE-1}"
+# Sur un cluster distant, les attentes sont plus longues qu'en local.
+ATTENTE_MAX="${ATTENTE_MAX-240}"
 NS="${NS-shopix}"
 
 DEPOT="${DEPOT-ccs-demos}"
 URL="${1-}"
 
+# Quel overlay ArgoCD doit-il suivre ? Celui du cluster auquel on parle.
+# Sur Kapsule, l'image vient du registre et le front est en LoadBalancer ; sur
+# Minikube, l'image est chargée localement et l'accès passe par l'Ingress.
+CHEMIN="${CHEMIN-}"
+
 titre "Dépôt GitOps → ArgoCD"
 exiger git kubectl
+annoncer_cluster
+if [ -z "$CHEMIN" ]; then
+  case "$(type_cluster)" in
+    kapsule) CHEMIN="k8s/overlays/scaleway" ;;
+    *)       CHEMIN="k8s/overlays/minikube" ;;
+  esac
+fi
+note "overlay suivi par ArgoCD : $CHEMIN"
 
 # Sans URL explicite : on déduit le propriétaire du compte GitHub authentifié.
 if [ -z "$URL" ]; then
@@ -69,16 +85,17 @@ else
 fi
 
 # ------------------------------------------------------- 2. l'URL dans le manifeste
-python3 - "$URL" <<'PYEOF'
+python3 - "$URL" "$CHEMIN" <<'PYEOF'
 import re, sys, pathlib
-url = sys.argv[1]
+url, chemin = sys.argv[1], sys.argv[2]
 p = pathlib.Path('gitops/apps/shopix.yaml')
 s = p.read_text(encoding='utf-8')
 s2 = re.sub(r'(\n\s*repoURL:\s*).*', lambda m: m.group(1) + url, s, count=1)
+s2 = re.sub(r'(\n\s*path:\s*).*', lambda m: m.group(1) + chemin, s2, count=1)
 s2 = s2.replace('# ⚠️ Renseignez repoURL avec l\'adresse de VOTRE dépôt avant d\'appliquer ce fichier.\n',
                 '# repoURL est renseigné par ./setup/05b-depot-gitops.sh.\n')
 p.write_text(s2, encoding='utf-8')
-print('   ℹ repoURL inscrit dans gitops/apps/shopix.yaml')
+print('   ℹ repoURL et path inscrits dans gitops/apps/shopix.yaml')
 PYEOF
 
 # ------------------------------------------- 3. le dépôt distant, s'il n'existe pas
@@ -161,14 +178,26 @@ fi
 kubectl apply -f gitops/apps/shopix.yaml >/dev/null || { ko "Application non appliquée"; exit 1; }
 
 attendre_que "ArgoCD synchronise l'application" \
-  "kubectl -n argocd get app shopix -o jsonpath='{.status.sync.status}' | grep -q Synced"
+  "kubectl -n argocd get app shopix -o jsonpath='{.status.sync.status}' | grep -q Synced" || SYNC_KO=1
 attendre_que "l'application est Healthy" \
-  "kubectl -n argocd get app shopix -o jsonpath='{.status.health.status}' | grep -q Healthy"
+  "kubectl -n argocd get app shopix -o jsonpath='{.status.health.status}' | grep -q Healthy" || SANTE_KO=1
 
 echo
 kubectl -n argocd get app shopix \
   -o custom-columns=NOM:.metadata.name,SYNC:.status.sync.status,SANTE:.status.health.status,REVISION:.status.sync.revision
 echo
-ok "ArgoCD suit maintenant ce dépôt. La démo 10 du J3 est prête."
-note "Si l'application reste « Unknown » : kubectl -n argocd logs deploy/argocd-repo-server --tail=30"
-note "(c'est là qu'on voit un dépôt injoignable ou une branche qui n'existe pas)"
+
+if [ -n "${SYNC_KO-}" ] || [ -n "${SANTE_KO-}" ]; then
+  ko "l'application n'est pas encore Synced/Healthy — la démo 10 ne tiendrait pas en l'état."
+  note "détail par ressource, celles qui ne sont pas saines :"
+  kubectl -n argocd get app shopix \
+    -o jsonpath='{range .status.resources[*]}{.kind}/{.name}  →  {.health.status}{"  "}{.health.message}{"\n"}{end}' \
+    2>/dev/null | grep -v '  →  Healthy' | sed 's/^/     /'
+  echo
+  note "Un dépôt injoignable ou une branche absente se voit ici :"
+  echo "     kubectl -n argocd logs deploy/argocd-repo-server --tail=30"
+  exit 1
+fi
+
+ok "ArgoCD suit ce dépôt, application Synced et Healthy. La démo 10 du J3 est prête."
+note "Vérification complète : ./setup/06b-autotest-j3.sh"

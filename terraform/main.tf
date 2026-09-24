@@ -39,6 +39,21 @@ resource "scaleway_k8s_cluster" "formation" {
   autoscaler_config {
     disable_scale_down = true
   }
+
+  # Contrainte de l'API Kapsule : une version MINEURE (« 1.34 ») n'est acceptée que si
+  # la mise à niveau automatique est activée. Sinon il faut le patch exact (« 1.34.3 »),
+  # qu'il faudrait aller relever avant chaque session — c'est précisément ce qu'on ne
+  # veut pas avoir à faire. Message en clair si on se trompe :
+  #   Error: minor version x.y must only be used with auto upgrade enabled
+  #
+  # La fenêtre de maintenance est placée le dimanche à 3 h UTC : aucune journée de
+  # formation ne tombe là. Et l'auto-upgrade ne fait que des patches à l'intérieur de
+  # 1.34 — jamais un saut de version mineure.
+  auto_upgrade {
+    enable                        = var.auto_maj
+    maintenance_window_start_hour = var.fenetre_heure
+    maintenance_window_day        = var.fenetre_jour
+  }
 }
 
 resource "scaleway_k8s_pool" "noeuds" {
@@ -49,6 +64,18 @@ resource "scaleway_k8s_pool" "noeuds" {
   autohealing = true
   autoscaling = false
   tags        = ["formation", "ccs"]
+}
+
+# Le registre d'images. PUBLIC volontairement : un namespace public dispense de
+# configurer un secret de tirage dans le cluster (Kapsule tire sans authentification),
+# et le palier gratuit va jusqu'à 75 Go — l'image Shopix pèse 240 Mo par architecture.
+# ⚠️ Le nom d'un namespace de registre est unique pour TOUT Scaleway : si l'apply
+# échoue sur un conflit de nom, changez var.registre.
+resource "scaleway_registry_namespace" "images" {
+  name        = var.registre
+  description = "Images de la formation CCS — public, aucun secret de tirage nécessaire"
+  is_public   = true
+  region      = var.region
 }
 
 # kubeconfig écrit à côté du code — pensez à ne jamais le committer.

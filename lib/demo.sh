@@ -103,12 +103,16 @@ ko() { printf "%s   ✘ %s%s\n" "$C_KO" "$*" "$C_RAZ"; }
 note() { printf "%s   ℹ %s%s\n" "$C_GRIS" "$*" "$C_RAZ"; }
 
 # Attente active qu'une condition soit vraie (évite les « sleep 30 » au hasard).
+# ATTENTE_MAX permet d'allonger le plafond sans toucher au reste : une IP publique
+# de LoadBalancer Scaleway ou un tirage d'image depuis un registre prennent plus que
+# les 120 s qui suffisent en local.
 attendre_que() {
   local libelle="$1"; shift
+  local max="${ATTENTE_MAX-120}"
   printf "%s   … %s%s" "$C_GRIS" "$libelle" "$C_RAZ"
   local n=0
   SECONDS=0          # variable bash : compte les secondes écoulées
-  while [ $n -lt 120 ]; do
+  while [ $n -lt "$max" ]; do
     if eval "$@" >/dev/null 2>&1; then
       # Le temps mesuré est la vraie réponse au pari « en combien de secondes ? »
       printf "\r%s   ✔ %-56s%3s s%s\n" "$C_OK" "$libelle" "$SECONDS" "$C_RAZ"
@@ -131,6 +135,70 @@ exiger() {
   if [ -n "$manquants" ]; then
     ko "outil(s) manquant(s) :$manquants"
     exit 1
+  fi
+}
+
+# Deux clusters coexistent pendant la session : Minikube en local pour le J1 et le
+# J2, Kapsule chez Scaleway pour le J3. Lancer une démonstration — ou pire, un reset
+# — sur le mauvais est une erreur qu'on ne voit qu'après. D'où ces deux fonctions.
+#
+# La détection ne se fie pas au nom du contexte (qu'on renomme, qu'on duplique) mais
+# à une trace que seul l'outil pose : minikube étiquette tous ses nœuds avec
+# minikube.k8s.io/version, et Kapsule renseigne spec.providerID en « scaleway://… ».
+type_cluster() {
+  if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' 2>/dev/null | grep -q 'minikube\.k8s\.io'; then
+    printf 'minikube'
+  elif kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' 2>/dev/null | grep -q '^scaleway'; then
+    printf 'kapsule'
+  else
+    printf 'inconnu'
+  fi
+}
+
+# Informatif : dit à quel cluster on parle, sans rien interdire.
+annoncer_cluster() {
+  local t ctx
+  t=$(type_cluster)
+  ctx=$(kubectl config current-context 2>/dev/null)
+  case "$t" in
+    minikube) note "cluster : Minikube (contexte $ctx)" ;;
+    kapsule)  note "cluster : Kapsule / Scaleway (contexte $ctx)" ;;
+    *)        note "cluster : non identifié (contexte ${ctx:-aucun})" ;;
+  esac
+}
+
+# Bloquant : à mettre en tête de tout script qui détruit ou modifie des objets.
+exiger_cluster() {
+  local attendu="$1" t ctx
+  t=$(type_cluster)
+  ctx=$(kubectl config current-context 2>/dev/null)
+  [ "$t" = "$attendu" ] && return 0
+  echo
+  ko "mauvais cluster : ce script attend « $attendu », vous parlez à « $t »."
+  note "contexte courant : ${ctx:-aucun}"
+  echo
+  if [ "$attendu" = "minikube" ]; then
+    note "Pour revenir au cluster local :"
+    echo "     unset KUBECONFIG && kubectl config use-context ccs"
+  else
+    note "Pour parler au cluster Kapsule :"
+    echo "     export KUBECONFIG=\$PWD/terraform/kubeconfig.yaml"
+  fi
+  echo
+  exit 1
+}
+
+# Les manifestes de k8s/demos/ portent « image: shopix:1.0.0 » : sur Minikube
+# l'image est chargée dans le cluster par « minikube image load », elle n'existe
+# dans aucun registre. Sur Kapsule il faut au contraire le nom complet du registre,
+# sinon les Pods restent en ImagePullBackOff. IMAGE_SHOPIX, quand elle est définie,
+# remplace le nom à la volée — c'est 10-kapsule-j3.sh qui la renseigne.
+appliquer_demo() {
+  local f="$1"
+  if [ -n "${IMAGE_SHOPIX-}" ]; then
+    sed "s|image: shopix:1.0.0|image: $IMAGE_SHOPIX|g" "$f" | kubectl apply -f -
+  else
+    kubectl apply -f "$f"
   fi
 }
 

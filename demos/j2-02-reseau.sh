@@ -6,6 +6,7 @@ source lib/demo.sh
 exiger kubectl
 NS="${NS-shopix}"
 PROFIL="${PROFIL-ccs}"
+exiger_cluster minikube   # ces démonstrations modifient le cluster local, pas Kapsule
 
 titre "Le réseau, sans les mains (Module 4)"
 
@@ -14,7 +15,7 @@ titre "Le réseau, sans les mains (Module 4)"
 # « unchanged » au lieu de « created » aux étapes 6 et 7 — la démonstration ne
 # montre alors plus rien du tout.
 silence "kubectl -n $NS delete netpol --all"
-silence "kubectl -n $NS apply -f k8s/demos/tools.yaml"
+silence "appliquer_demo k8s/demos/tools.yaml"
 attendre_que "la boîte à outils est prête" "kubectl -n $NS get pod tools -o jsonpath='{.status.phase}' | grep -q Running"
 
 # ------------------------------------------------------------ 1. IP par Pod

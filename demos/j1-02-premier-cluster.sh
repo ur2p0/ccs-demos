@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.." || exit 1
 source lib/demo.sh
 exiger kubectl minikube
 PROFIL="${PROFIL-ccs}"
+exiger_cluster minikube   # cette démonstration parle du cluster local
 
 titre "Le paysage, puis un cluster (Module 4)"
 

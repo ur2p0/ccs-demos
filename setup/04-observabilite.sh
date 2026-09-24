@@ -8,12 +8,17 @@
 cd "$(dirname "$0")/.." || exit 1
 source lib/demo.sh
 VITESSE=0
+SANS_PAUSE="${SANS_PAUSE-1}"
+# Sur un cluster distant, les attentes sont plus longues qu'en local.
+ATTENTE_MAX="${ATTENTE_MAX-240}"
 PROFIL="${PROFIL-ccs}"
 MDP_GRAFANA="${MDP_GRAFANA-shopix}"
 
 titre "Observabilité — Prometheus, Grafana, Loki"
 exiger helm kubectl
+annoncer_cluster
 note "compter ~2 Go de RAM supplémentaires dans le cluster"
+note "sur un Mac, c'est ce qui met Minikube à genoux : préférez Kapsule (terraform/)"
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1
 helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1
@@ -59,10 +64,26 @@ kubectl -n observabilite create configmap tableau-shopix \
   | kubectl label --local -f - grafana_dashboard=1 -o yaml --dry-run=client \
   | kubectl apply -f - >/dev/null || ko "tableau de bord non provisionné"
 
+# Le sidecar « datasources » écrit le fichier de provisioning puis demande à
+# Grafana de recharger. Ce rechargement n'est pas instantané et dépend de la
+# version du chart : un redémarrage de Grafana supprime toute incertitude, et ne
+# coûte que vingt secondes en préparation.
+SVC_GRAF=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+DEP_GRAF=$(kubectl -n observabilite get deploy -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [ -n "$DEP_GRAF" ]; then
+  kubectl -n observabilite rollout restart "deploy/$DEP_GRAF" >/dev/null
+  attendre_que "Grafana redémarre avec ses sources de données" \
+    "kubectl -n observabilite rollout status deploy/$DEP_GRAF --timeout=120s"
+fi
+
 echo
 ok "Pile installée."
-note "Accès (macOS) : ./setup/08-acces-j3.sh dans un terminal dédié,"
+
+note "Accès : ./setup/08-acces-j3.sh dans un terminal dédié,"
 note "puis http://localhost:3000 — admin / $MDP_GRAFANA"
+note "(le tunnel fonctionne aussi bien sur Minikube que sur Kapsule)"
 note "Le tableau « Shopix — observabilité (formation CCS) » est déjà là : pas d'import."
 echo
 note "Générateur de trafic — sans lui tous les panneaux sont plats :"

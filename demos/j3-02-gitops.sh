@@ -8,6 +8,8 @@ NS="${NS-shopix}"
 # Même raison que pour Grafana : l'accès passe par ./setup/08-acces-j3.sh.
 PORT_ARGOCD="${PORT_ARGOCD-8080}"
 
+annoncer_cluster          # Minikube ou Kapsule : on le dit, on n'interdit rien
+
 titre "GitOps en action (Module 7)"
 
 # ------------------------------------------------------------ 1. l'état de référence

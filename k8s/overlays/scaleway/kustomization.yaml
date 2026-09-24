@@ -8,9 +8,17 @@ resources:
 # Construisez-la avec ./setup/02b-images-multiarch.sh, puis reportez le nom ici.
 images:
   - name: shopix
-    newName: rg.fr-par.scw.cloud/shopix-ccs/shopix
+    newName: rg.fr-par.scw.cloud/ccs-shopix/shopix
     newTag: 1.0.0
 patches:
+  # Le stockage bloc de Scaleway a une taille minimale (5 Go selon la génération de
+  # CSI). Un PVC de 1 Gi peut rester Pending indéfiniment — on demande 5 Gi, ce qui
+  # coûte quelques centimes par jour.
+  - target: { kind: PersistentVolumeClaim, name: shopix-commandes }
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 5Gi
   # Le disque est un volume réseau : le Pod n'a plus besoin de revenir sur le même nœud.
   - target: { kind: Deployment, name: shopix-commandes }
     patch: |-

@@ -3,10 +3,13 @@
 *.bak
 node_modules/
 
-# État Terraform : ne jamais publier
+# État Terraform et kubeconfig : ne jamais publier — le kubeconfig contient un
+# certificat client qui donne les pleins droits sur le cluster.
 terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.*
+terraform/kubeconfig.yaml
+terraform/*.tfvars
 
 # Runbook d'animation : document de préparation personnel (nom, client, tarifs
 # éventuels). ArgoCD n'en a pas besoin — il reste dans iCloud.

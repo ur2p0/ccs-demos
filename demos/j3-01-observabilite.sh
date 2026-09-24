@@ -9,6 +9,8 @@ NS="${NS-shopix}"
 # nœud Minikube n'est pas routable depuis le navigateur.
 PORT_GRAFANA="${PORT_GRAFANA-3000}"
 
+annoncer_cluster          # Minikube ou Kapsule : on le dit, on n'interdit rien
+
 titre "Incident du jour : « le site rame, une fois sur cent »"
 dire "Un client appelle. Parfois, le paiement met trois secondes. Parfois. Personne ne reproduit."
 

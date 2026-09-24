@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Ouvre l'accès à Grafana et à ArgoCD depuis le navigateur du Mac (J3).
 #
-# Même raison d'être que 07-acces.sh : avec le driver Docker sur macOS, l'IP du
-# nœud Minikube vit dans une machine virtuelle et n'est pas routable depuis
-# macOS. Les NodePort 30300 et 30800 ne répondent donc pas, malgré les
-# apparences. Sur Linux, ce script est inutile.
+# Deux raisons d'être, selon le cluster :
+#   · sur Minikube avec le driver Docker sur macOS, l'IP du nœud vit dans une
+#     machine virtuelle et n'est pas routable : les NodePort 30300 et 30800 ne
+#     répondent pas, malgré les apparences ;
+#   · sur Kapsule, exposer Grafana et ArgoCD demanderait deux LoadBalancers
+#     facturés — un port-forward vers l'API publique ne coûte rien.
+# Dans les deux cas, ce script est le bon chemin.
 #
 #   ./setup/08-acces-j3.sh        laisse tourner dans un terminal dédié
 #   PORT_GRAFANA=3001 ./setup/08-acces-j3.sh

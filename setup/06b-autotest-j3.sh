@@ -53,34 +53,58 @@ patienter() {
 
 titre "Autotest J3 — observabilité et GitOps"
 exiger kubectl
+annoncer_cluster
 
 # Une NetworkPolicy oubliée empêcherait le Pod « tools » d'interroger l'API.
 silence "kubectl -n $NS delete netpol --all"
-silence "kubectl -n $NS apply -f k8s/demos/tools.yaml"
+silence "appliquer_demo k8s/demos/tools.yaml"
 patienter 60 "kubectl -n $NS get pod tools -o jsonpath='{.status.phase}' | grep -q Running" \
   || { ko "le Pod « tools » ne démarre pas — impossible de tester depuis le cluster"; exit 1; }
 
 # ══════════════════════════════════════════════ 1. la pile d'observabilité
 etape 1 "Prometheus, Grafana, Loki"
 
+OBS=oui
 if ! kubectl get ns observabilite >/dev/null 2>&1; then
-  ko "namespace « observabilite » absent — lancez ./setup/04-observabilite.sh"
-  exit 1
+  OBS=non
+  ignorer "pile d'observabilité (namespace absent — ./setup/04-observabilite.sh)"
 fi
 
+if [ "$OBS" = "oui" ]; then
 tester "les Pods d'observabilité sont tous Running" \
   "! kubectl -n observabilite get pods --no-headers | grep -vE 'Running|Completed' | grep -q ."
 
 tester "le ServiceMonitor de Shopix est posé" \
   "kubectl -n observabilite get servicemonitor shopix -o name | grep -q shopix"
 
-SVC_PROM=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=prometheus \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+# Le nom du service Prometheus dépend du chart ET de sa version. L'étiquette
+# app.kubernetes.io/name=prometheus n'est pas posée par toutes les versions de
+# kube-prometheus-stack : on essaie plusieurs pistes plutôt qu'une seule.
+trouver_svc_prometheus() {
+  local nom sel
+  for sel in "app.kubernetes.io/name=prometheus" "app=kube-prometheus-stack-prometheus"; do
+    nom=$(kubectl -n observabilite get svc -l "$sel" \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    [ -n "$nom" ] && { printf '%s' "$nom"; return 0; }
+  done
+  # par le nom, en écartant le service « operated » qui est sans adresse propre
+  nom=$(kubectl -n observabilite get svc -o name 2>/dev/null | sed 's|service/||' \
+    | grep -- '-prometheus$' | grep -v operated | head -1)
+  [ -n "$nom" ] && { printf '%s' "$nom"; return 0; }
+  # dernier recours : le service headless créé par l'opérateur
+  kubectl -n observabilite get svc -l operated-prometheus=true \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
+}
+SVC_PROM=$(trouver_svc_prometheus)
 SVC_GRAF=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=grafana \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 PORT_GRAF=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=grafana \
   -o jsonpath='{.items[0].spec.ports[0].port}' 2>/dev/null)
-note "services découverts : prometheus=${SVC_PROM:-?} · grafana=${SVC_GRAF:-?}:${PORT_GRAF:-?}"
+note "services découverts : prometheus=${SVC_PROM:-INTROUVABLE} · grafana=${SVC_GRAF:-INTROUVABLE}:${PORT_GRAF:-?}"
+if [ -z "$SVC_PROM" ]; then
+  ko "service Prometheus introuvable — voici ce qu'il y a dans le namespace :"
+  kubectl -n observabilite get svc --show-labels | sed 's/^/     /'
+fi
 
 # On provoque un peu de trafic, puis on laisse passer deux collectes.
 silence "for i in 1 2 3 4 5 6 7 8 9 10; do kubectl -n $NS exec tools -- wget -q -T 3 -O /dev/null http://shopix-api:8080/api/produits; done"
@@ -90,14 +114,15 @@ tester "Prometheus collecte les métriques de Shopix" \
 
 GRAF="http://$SVC_GRAF.observabilite.svc.cluster.local:${PORT_GRAF:-80}"
 tester "la source de données Prometheus a bien l'uid « prometheus »" \
-  "kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/prometheus' | grep -q prometheus"
+  "patienter 60 \"kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/prometheus' | grep -q prometheus\""
 
 tester "le tableau de bord Shopix est provisionné dans Grafana" \
   "kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/dashboards/uid/shopix-ccs' | grep -q 'observabilit'"
 
 if kubectl -n observabilite get svc loki >/dev/null 2>&1; then
+  # Le sidecar peut mettre un moment à recharger le provisioning : on patiente.
   tester "la source de données Loki est déclarée (panneau Journaux)" \
-    "kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/loki' | grep -q loki"
+    "patienter 90 \"kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/loki' | grep -q loki\""
 else
   ignorer "source de données Loki (Loki non installé)"
 fi
@@ -108,6 +133,7 @@ if kubectl -n "$NS" get deploy shopix-charge >/dev/null 2>&1; then
 else
   ignorer "générateur de trafic (kubectl apply -f k8s/demos/10-charge.yaml)"
 fi
+fi   # fin du bloc observabilité
 
 # ══════════════════════════════════════════════ 2. la pile GitOps
 etape 2 "ArgoCD"
@@ -124,7 +150,13 @@ else
     tester "l'application shopix est Synced" \
       "kubectl -n argocd get app shopix -o jsonpath='{.status.sync.status}' | grep -q Synced"
     tester "l'application shopix est Healthy" \
-      "kubectl -n argocd get app shopix -o jsonpath='{.status.health.status}' | grep -q Healthy"
+      "patienter 90 \"kubectl -n argocd get app shopix -o jsonpath='{.status.health.status}' | grep -q Healthy\""
+    if ! kubectl -n argocd get app shopix -o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; then
+      note "détail par ressource — c'est là qu'on voit laquelle bloque :"
+      kubectl -n argocd get app shopix \
+        -o jsonpath='{range .status.resources[*]}{.kind}/{.name}  →  {.health.status}{"  "}{.health.message}{"\n"}{end}' \
+        2>/dev/null | grep -v '  →  Healthy' | sed 's/^/     /'
+    fi
     tester "selfHeal est actif (sinon la démo 10 ne montre rien)" \
       "kubectl -n argocd get app shopix -o jsonpath='{.spec.syncPolicy.automated.selfHeal}' | grep -q true"
     tester "le dépôt suivi n'est plus l'URL d'exemple" \

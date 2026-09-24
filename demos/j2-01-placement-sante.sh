@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.." || exit 1
 source lib/demo.sh
 exiger kubectl
 NS="${NS-shopix}"
+exiger_cluster minikube   # ces démonstrations modifient le cluster local, pas Kapsule
 
 titre "Incident du jour : cette nuit, un Pod a mangé toute la RAM d'un nœud"
 

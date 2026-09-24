@@ -7,10 +7,14 @@
 cd "$(dirname "$0")/.." || exit 1
 source lib/demo.sh
 VITESSE=0
+SANS_PAUSE="${SANS_PAUSE-1}"
+# Sur un cluster distant, les attentes sont plus longues qu'en local.
+ATTENTE_MAX="${ATTENTE_MAX-240}"
 PROFIL="${PROFIL-ccs}"
 
 titre "ArgoCD — le contrôleur GitOps"
 exiger kubectl
+annoncer_cluster
 
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
@@ -56,6 +60,19 @@ kubectl -n argocd rollout restart deploy argocd-server >/dev/null
 attendre_que "le serveur redémarre en HTTP" \
   "kubectl -n argocd rollout status deploy argocd-server --timeout=90s"
 
+# Santé de l'Ingress : ArgoCD considère par défaut qu'un Ingress n'est « Healthy »
+# que lorsque status.loadBalancer.ingress est renseigné — c'est-à-dire quand un
+# contrôleur lui a attribué une IP publique. Sur Minikube, Traefik est exposé en
+# NodePort : ce champ reste vide pour toujours, l'Ingress reste « Progressing », et
+# l'application entière reste « Progressing » alors que tout fonctionne. On dit donc
+# à ArgoCD qu'ici, un Ingress sans IP est normal.
+kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"resource.customizations.health.networking.k8s.io_Ingress":"hs = {}\nhs.status = \"Healthy\"\nhs.message = \"Ingress local (Traefik en NodePort) : aucune IP publique a attendre\"\nreturn hs\n"}}' >/dev/null
+# Le contrôleur relit argocd-cm à chaud, mais on force pour ne pas dépendre du délai.
+silence "kubectl -n argocd rollout restart statefulset argocd-application-controller"
+silence "kubectl -n argocd rollout restart deploy argocd-application-controller"
+attendre_que "le contrôleur applique la règle de santé" \
+  "kubectl -n argocd get cm argocd-cm -o jsonpath='{.data}' | grep -q networking.k8s.io_Ingress"
+
 # NodePort : utile sur Linux, inopérant sur macOS avec le driver Docker (l'IP du
 # nœud vit dans la VM). On le pose quand même, l'accès passe par le tunnel.
 kubectl -n argocd patch svc argocd-server -p \
@@ -67,7 +84,7 @@ MDP=$(kubectl -n argocd get secret argocd-initial-admin-secret \
 
 echo
 ok "ArgoCD installé."
-note "Accès (macOS) : ./setup/08-acces-j3.sh puis http://localhost:8080"
+note "Accès : ./setup/08-acces-j3.sh puis http://localhost:8080"
 note "   identifiant : admin"
 note "   mot de passe : ${MDP:-(secret argocd-initial-admin-secret introuvable)}"
 echo
