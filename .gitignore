@@ -23,7 +23,7 @@ demo-containers/
 
 # Schémas des démonstrations et générateur du runbook détaillé : les données
 # contiennent le nom du formateur et du client — ils restent dans iCloud.
-schemas/
+/schemas/
 
 # Fichiers de verrou Office (document ouvert dans Word / PowerPoint)
 ~$*
