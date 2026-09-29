@@ -195,6 +195,15 @@ exiger_cluster() {
 # remplace le nom à la volée — c'est 10-kapsule-j3.sh qui la renseigne.
 appliquer_demo() {
   local f="$1"
+  # Si la variable n'est pas là mais qu'on parle à Kapsule, on va chercher le nom
+  # dans l'overlay : c'est lui qui porte la vérité, et ça évite de dépendre du fait
+  # qu'un script parent ait pensé à exporter la variable.
+  if [ -z "${IMAGE_SHOPIX-}" ] && [ "$(type_cluster)" = "kapsule" ]; then
+    local _nom _tag
+    _nom=$(awk '/newName:/ {print $2; exit}' k8s/overlays/scaleway/kustomization.yaml 2>/dev/null)
+    _tag=$(awk '/newTag:/ {gsub(/"/,"",$2); print $2; exit}' k8s/overlays/scaleway/kustomization.yaml 2>/dev/null)
+    [ -n "$_nom" ] && IMAGE_SHOPIX="$_nom:${_tag:-1.0.0}"
+  fi
   if [ -n "${IMAGE_SHOPIX-}" ]; then
     sed "s|image: shopix:1.0.0|image: $IMAGE_SHOPIX|g" "$f" | kubectl apply -f -
   else

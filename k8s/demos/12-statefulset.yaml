@@ -1,0 +1,69 @@
+# StatefulSet — une identité stable : des noms numérotés, un disque par Pod, un ordre de démarrage.
+# Démonstration « base de paiement » : 3 réplicas de la même image Shopix, chacune avec SON volume.
+# En local, les volumes sont des répertoires du nœud : on épingle les Pods sur le nœud stockage=oui.
+# Nettoyage : kubectl -n shopix delete -f k8s/demos/12-statefulset.yaml
+#             kubectl -n shopix delete pvc -l app=registre   (les PVC survivent au StatefulSet : c'est voulu)
+apiVersion: v1
+kind: Service
+metadata:
+  name: registre
+  namespace: shopix
+  labels: { app: registre }
+spec:
+  clusterIP: None          # Service « headless » : un nom DNS par Pod (registre-0.registre, …)
+  selector: { app: registre }
+  ports: [{ port: 8080, targetPort: http, name: http }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: registre
+  namespace: shopix
+  labels: { app: registre }
+spec:
+  serviceName: registre
+  replicas: 3
+  selector:
+    matchLabels: { app: registre }
+  template:
+    metadata:
+      labels: { app: registre }
+    spec:
+      nodeSelector: { stockage: "oui" }
+      containers:
+        - name: registre
+          image: shopix:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8080, name: http }]
+          env:
+            - { name: ROLE, value: api }
+            - { name: DATA_DIR, value: /data }
+            - { name: POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: NODE_NAME, valueFrom: { fieldRef: { fieldPath: spec.nodeName } } }
+            - { name: POD_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+          envFrom:
+            - configMapRef: { name: shopix-config }
+            - secretRef: { name: shopix-paiement }
+          volumeMounts:
+            - { name: donnees, mountPath: /data }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+  volumeClaimTemplates:
+    - metadata:
+        name: donnees
+        labels: { app: registre }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 100Mi }

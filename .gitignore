@@ -20,3 +20,10 @@ make_runbook_docx.js
 # Ancien jeu de démonstrations (avril 2026), remplacé par demos/ — conservé en
 # local pour mémoire, inutile dans le dépôt.
 demo-containers/
+
+# Schémas des démonstrations et générateur du runbook détaillé : les données
+# contiennent le nom du formateur et du client — ils restent dans iCloud.
+schemas/
+
+# Fichiers de verrou Office (document ouvert dans Word / PowerPoint)
+~$*

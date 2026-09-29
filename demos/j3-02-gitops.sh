@@ -55,4 +55,5 @@ echo
 titre "Ce qu'on retient"
 dire "Le dépôt décrit l'intention, l'agent maintient la réalité. C'est la boucle de réconciliation du J1,"
 dire "sortie du cluster et appliquée à la plateforme entière."
-note "Reprise : kubectl -n $NS scale deploy shopix-front --replicas=2"
+note "Reprise : git revert --no-edit HEAD && git push, puis Refresh dans ArgoCD (retour à 2 réplicas)."
+note "Un kubectl scale serait annulé : c'est Git qui fait foi, maintenant."

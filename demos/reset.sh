@@ -28,6 +28,9 @@ nettoyer_k8s() {
     silence "kubectl -n $NS delete -f $_f --ignore-not-found"
   done
   silence "kubectl -n $NS delete netpol --all"
+  silence "kubectl -n $NS delete -f k8s/demos/11-hpa.yaml --ignore-not-found"
+  silence "kubectl -n $NS delete -f k8s/demos/12-statefulset.yaml --ignore-not-found"
+  silence "kubectl -n $NS delete pvc -l app=registre --ignore-not-found"
   silence "kubectl -n $NS delete job facturation --ignore-not-found"
   silence "kubectl label ns $NS pod-security.kubernetes.io/enforce=baseline --overwrite"
   for n in $(kubectl get nodes -o name 2>/dev/null); do

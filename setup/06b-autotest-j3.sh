@@ -57,9 +57,18 @@ annoncer_cluster
 
 # Une NetworkPolicy oubliée empêcherait le Pod « tools » d'interroger l'API.
 silence "kubectl -n $NS delete netpol --all"
+# Le Pod « tools » est un Pod nu : une éviction sous pression mémoire le fait
+# disparaître définitivement. On le recrée donc plutôt que de supposer qu'il est là.
+silence "kubectl -n $NS delete pod tools --ignore-not-found --now"
 silence "appliquer_demo k8s/demos/tools.yaml"
-patienter 60 "kubectl -n $NS get pod tools -o jsonpath='{.status.phase}' | grep -q Running" \
-  || { ko "le Pod « tools » ne démarre pas — impossible de tester depuis le cluster"; exit 1; }
+if ! patienter 90 "kubectl -n $NS get pod tools -o jsonpath='{.status.phase}' | grep -q Running"; then
+  ko "le Pod « tools » ne démarre pas — les tests qui passent par lui sont impossibles."
+  kubectl -n "$NS" get pod tools -o wide 2>&1 | sed 's/^/     /'
+  kubectl -n "$NS" describe pod tools 2>/dev/null | grep -A4 "Events:" | sed 's/^/     /'
+  note "Sur Kapsule, l'image doit venir du registre : vérifiez newName dans"
+  note "k8s/overlays/scaleway/kustomization.yaml, ou exportez IMAGE_SHOPIX."
+  exit 1
+fi
 
 # ══════════════════════════════════════════════ 1. la pile d'observabilité
 etape 1 "Prometheus, Grafana, Loki"
@@ -71,8 +80,59 @@ if ! kubectl get ns observabilite >/dev/null 2>&1; then
 fi
 
 if [ "$OBS" = "oui" ]; then
-tester "les Pods d'observabilité sont tous Running" \
-  "! kubectl -n observabilite get pods --no-headers | grep -vE 'Running|Completed' | grep -q ."
+# Un Pod est bon si son STATUS est Running avec tous ses conteneurs prêts, ou
+# Completed. Juste après un « rollout restart », l'ancien Pod est encore en
+# Terminating : d'où l'attente, plutôt qu'un jugement à la première seconde.
+pods_non_prets() {
+  kubectl -n observabilite get pods --no-headers 2>/dev/null | awk '
+    { split($2, r, "/");
+      ok = ((($3 == "Running") && (r[1] == r[2])) || $3 == "Completed");
+      if (!ok) print }'
+}
+attendre_pods_obs() {
+  local n=0
+  while [ $n -lt 150 ]; do
+    [ -z "$(pods_non_prets)" ] && return 0
+    sleep 3; n=$((n + 3))
+  done
+  return 1
+}
+tester "les Pods d'observabilité sont tous prêts" "attendre_pods_obs"
+if [ -n "$(pods_non_prets)" ]; then
+  note "Pods qui ne sont pas prêts — c'est la cause à traiter :"
+  pods_non_prets | sed 's/^/     /'
+  echo
+  note "Pourquoi leurs conteneurs se sont arrêtés (OOMKilled = mémoire insuffisante) :"
+  for _p in $(pods_non_prets | awk '{print $1}'); do
+    kubectl -n observabilite get pod "$_p" -o go-template='{{range .status.containerStatuses}}     {{.name}} · prêt={{.ready}} · redémarrages={{.restartCount}}{{with .lastState.terminated}} · dernier arrêt={{.reason}} (code {{.exitCode}}){{end}}
+{{end}}' 2>/dev/null
+  done
+  echo
+  # Le « pourquoi » d'un conteneur qui sort en code 1 n'est pas dans son statut :
+  # il est dans les logs de l'instance PRÉCÉDENTE, celle qui vient de mourir.
+  note "Ce que disait le conteneur avant de mourir (--previous) :"
+  for _p in $(pods_non_prets | awk '{print $1}'); do
+    for _c in $(kubectl -n observabilite get pod "$_p" \
+                 -o jsonpath='{range .status.containerStatuses[?(@.ready==false)]}{.name} {end}' 2>/dev/null); do
+      printf "     ── %s / %s\n" "$_p" "$_c"
+      kubectl -n observabilite logs "$_p" -c "$_c" --previous --tail=25 2>&1 \
+        | sed 's/^/        /'
+    done
+  done
+  echo
+  note "Consommation des nœuds — c'est là qu'on voit si le cluster est trop petit :"
+  kubectl top nodes 2>/dev/null | sed 's/^/     /' || note "     (metrics-server pas encore prêt)"
+  kubectl get nodes -o custom-columns='NOEUD:.metadata.name,RAM_ALLOUABLE:.status.allocatable.memory,CPU:.status.allocatable.cpu' \
+    --no-headers 2>/dev/null | sed 's/^/     /'
+  echo
+  note "Comment lire ce qui précède :"
+  note "  · OOMKilled / code 137 → le cluster est trop petit. Deux remèdes :"
+  echo "        cd terraform && terraform apply -var type_noeud=GP1-XS   # 16 Go/nœud, ~4,46 €/jour"
+  echo "        LOKI=non ./setup/04-observabilite.sh                      # on se passe de Loki"
+  note "  · Error / code 1 avec les nœuds sous 50 % → ce n'est PAS la mémoire."
+  note "    La réponse est dans les logs --previous ci-dessus : configuration refusée,"
+  note "    fichier de provisioning invalide, dépendance injoignable."
+fi
 
 tester "le ServiceMonitor de Shopix est posé" \
   "kubectl -n observabilite get servicemonitor shopix -o name | grep -q shopix"
@@ -98,6 +158,8 @@ trouver_svc_prometheus() {
 SVC_PROM=$(trouver_svc_prometheus)
 SVC_GRAF=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=grafana \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+DEP_GRAF=$(kubectl -n observabilite get deploy -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 PORT_GRAF=$(kubectl -n observabilite get svc -l app.kubernetes.io/name=grafana \
   -o jsonpath='{.items[0].spec.ports[0].port}' 2>/dev/null)
 note "services découverts : prometheus=${SVC_PROM:-INTROUVABLE} · grafana=${SVC_GRAF:-INTROUVABLE}:${PORT_GRAF:-?}"
@@ -122,7 +184,20 @@ tester "le tableau de bord Shopix est provisionné dans Grafana" \
 if kubectl -n observabilite get svc loki >/dev/null 2>&1; then
   # Le sidecar peut mettre un moment à recharger le provisioning : on patiente.
   tester "la source de données Loki est déclarée (panneau Journaux)" \
-    "patienter 90 \"kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/loki' | grep -q loki\""
+    "patienter 120 \"kubectl -n $NS exec tools -- wget -q -T 5 --header='$AUTH' -O- '$GRAF/api/datasources/uid/loki' | grep -q loki\""
+  if ! kubectl -n "$NS" exec tools -- wget -q -T 5 --header="$AUTH" -O- "$GRAF/api/datasources/uid/loki" 2>/dev/null | grep -q loki; then
+    note "Toutes les ConfigMaps de sources de données, et leur contenu :"
+    kubectl -n observabilite get cm -l grafana_datasource=1 --no-headers -o custom-columns=NOM:.metadata.name 2>/dev/null | sed 's/^/     /'
+    note "Combien se déclarent « par défaut » ? Plus d'une, et Grafana refuse de démarrer :"
+    kubectl -n observabilite get cm -l grafana_datasource=1 -o yaml 2>/dev/null \
+      | grep -iE "^  *name:|isDefault|  *type:|  *uid:" | sed 's/^/     /'
+    note "« Only one datasource per organization can be marked as default » dans les logs"
+    note "de Grafana = ce doublon. C'est un refus de démarrage, pas un avertissement."
+    note "Ce que dit le sidecar qui devrait la charger :"
+    kubectl -n observabilite logs "deploy/${DEP_GRAF:-obs-grafana}" -c grafana-sc-datasources --tail=12 2>&1 | sed 's/^/     /'
+    note "Sans Loki, seul le panneau « Journaux » de la démo 9 est vide : les cinq autres"
+    note "panneaux et tout le déroulé de la démonstration tiennent debout."
+  fi
 else
   ignorer "source de données Loki (Loki non installé)"
 fi
