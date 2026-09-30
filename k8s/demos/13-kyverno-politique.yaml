@@ -1,0 +1,31 @@
+# Politique comme code — Kyverno (ValidatingPolicy, API stable depuis Kyverno 1.19).
+# Deux règles de bonnes pratiques, limitées au namespace shopix :
+#   1. pas d'image sans version, ni de « :latest » ;
+#   2. une limite mémoire obligatoire sur chaque container.
+# Le PSA (démo 8) applique des niveaux standard ; ici, c'est l'équipe qui écrit ses règles,
+# en YAML, versionnées dans Git comme le reste.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: shopix-bonnes-pratiques
+spec:
+  # Deny : refus à l'admission. Warn : accepté avec un avertissement. Audit : accepté, noté dans un rapport.
+  validationActions: [Deny]
+  # La même règle est générée pour les Deployments : le refus arrive dès le kubectl apply
+  # du Deployment, pas plus tard, en silence, quand le ReplicaSet crée les Pods.
+  autogen:
+    podControllers:
+      controllers: [deployments]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels: { kubernetes.io/metadata.name: shopix }
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - expression: "object.spec.containers.all(c, c.image.contains(':') && !c.image.endsWith(':latest'))"
+      message: "Image sans version ou en :latest interdite dans shopix. Indiquez une version précise (ex. nginx:1.27-alpine)."
+    - expression: "object.spec.containers.all(c, has(c.resources) && has(c.resources.limits) && 'memory' in c.resources.limits)"
+      message: "Limite mémoire obligatoire dans shopix : renseignez resources.limits.memory sur chaque container."
