@@ -1,6 +1,6 @@
 # Refaire les démonstrations, pas à pas
 
-Ce guide reprend les douze démonstrations de la formation. Pour chacune : ce qu'elle montre, le schéma de ce qui est déployé, puis chaque étape du script avec la commande exécutée, la question à se poser avant de la lancer, ce que vous devez voir et pourquoi.
+Ce guide reprend les onze démonstrations de la formation. Pour chacune : ce qu'elle montre, le schéma de ce qui est déployé, puis chaque étape du script avec la commande exécutée, la question à se poser avant de la lancer, ce que vous devez voir et pourquoi.
 
 > **Mode d'emploi.** Lancez le script indiqué : il affiche chaque commande et attend `Entrée` avant de l'exécuter (`q` pour sortir). Avant chaque ❓, faites votre pronostic *avant* de dévoiler la réponse. Le montage de l'environnement est décrit dans le [README](../README.md).
 
@@ -17,7 +17,6 @@ Ce guide reprend les douze démonstrations de la formation. Pour chacune : ce qu
 | [9](#démo-9) | Jour 3 | La chasse au coupable | `demos/j3-01-observabilite.sh` |
 | [10](#démo-10) | Jour 3 | GitOps en action | `demos/j3-02-gitops.sh` |
 | [11](#démo-11) | Jour 3 | Shopix chez un fournisseur | `demos/j3-00-manage.sh` |
-| [12](#démo-12) | Jour 3 | Vos règles, en YAML (Kyverno) | `demos/j3-03-kyverno.sh` |
 
 ![Où tournent les démos](schemas/00-vue-ensemble.png)
 
@@ -1287,117 +1286,6 @@ Oui : le disque se détache du premier nœud et se rattache au second, en 30 à 
 - *« Le plan de contrôle est-il facturé ? »* Chez Scaleway, pas dans l'offre utilisée ici ; chez AWS, EKS facture le plan de contrôle à l'heure ; les offres varient, et c'est un critère de choix du Module 6.
 
 **Revenir à l'état de départ :** `automatique (nœud rouvert, vitrine supprimée) ; à la main : kubectl uncordon <nœud> && kubectl -n shopix delete svc vitrine`
-
-
----
-
-<a id="démo-12"></a>
-## Démo 12 — Vos règles, en YAML (Kyverno)
-
-**Jour 3 · Module 8** · `./demos/j3-03-kyverno.sh`
-
-**Ce que la démo montre.** Montrer la politique comme code : le PSA de la démo 8 applique des niveaux standard, Kyverno applique les règles que l'équipe écrit elle-même — ici, pas d'image sans version et une limite mémoire obligatoire. Refus à l'admission avec un message clair, génération automatique pour les Deployments, test à blanc, puis mode progressif (Warn, Audit) et rapport de conformité.
-
-> **Prérequis :** un cluster (Minikube ou Kapsule) et Helm ; le script installe Kyverno s'il manque (`--preparer` pour le faire à l'avance, `--desinstaller` pour le retirer).
-
-![Démo 12 · Vos règles, à l'admission](schemas/12a-kyverno-admission.png)
-
-
-### 1. Ce que le vigile du J2 laisse passer
-
-```sh
-kubectl -n shopix run essai --image=nginx
-kubectl -n shopix get pod essai -o jsonpath='image=… · limites=…'
-```
-
-❓ **Un nginx sans version, sans limite mémoire. Le namespace est en baseline. Passe-t-il ?**
-
-<details><summary>Réponse</summary>
-
-Oui : le PSA ne s'occupe que des privilèges. Ni la version (donc :latest implicite), ni les limites ne sont contrôlées.
-
-</details>
-
-**Ce que vous devez voir** — Le Pod est créé ; image=nginx, limites vides. « ✘ Il passe. »
-
-**Pourquoi** — Deux problèmes classiques de production : :latest change sous vos pieds (un redémarrage peut tirer une autre version, et un rollback devient impossible) ; sans limite mémoire, un Pod peut affamer le nœud (démo 5). Aucun des deux n'est une question de sécurité au sens du PSA : ce sont des règles d'équipe.
-
-
-### 2. On écrit la règle
-
-```sh
-cat k8s/demos/13-kyverno-politique.yaml
-kubectl apply -f k8s/demos/13-kyverno-politique.yaml
-```
-
-**Ce que vous devez voir** — La ValidatingPolicy (policies.kyverno.io/v1) : validationActions Deny, autogen pour les Deployments, un namespaceSelector sur shopix, deux validations avec leur message ; puis « la politique est active à l'admission ».
-
-**Pourquoi** — Kyverno est un webhook d'admission : l'api-server lui soumet chaque objet avant de l'écrire dans etcd. Depuis Kyverno 1.19, les règles s'écrivent en CEL, le même langage que les ValidatingAdmissionPolicy natives de Kubernetes : l'ancien format ClusterPolicy est déprécié. Le script vérifie que la règle est active par un essai à blanc (dry-run côté serveur), qui traverse les webhooks sans rien créer.
-
-
-### 3. Le même nginx, maintenant
-
-```sh
-kubectl -n shopix run essai --image=nginx
-kubectl -n shopix create deployment essai --image=nginx:1.27-alpine
-```
-
-❓ **Même commande qu'il y a une minute. Que va répondre l'api-server ? — Et si je contourne en passant par un Deployment ?**
-
-<details><summary>Réponse</summary>
-
-Refusé, avec les messages écrits dans la politique. Le Deployment est refusé aussi : version précise cette fois, mais pas de limite mémoire, et la règle a été générée pour les Deployments (autogen).
-
-</details>
-
-**Ce que vous devez voir** — Deux refus « denied the request » avec les messages de l'équipe.
-
-**Pourquoi** — Le message est la moitié de la valeur d'une politique : un refus incompréhensible génère un ticket, un refus qui dit quoi corriger se corrige tout seul. L'autogen est un point fin mais important : les Pods ne sont presque jamais créés à la main, c'est le contrôleur qui les crée ; sans autogen, le refus arrive trop tard et en silence (les événements du ReplicaSet).
-
-
-### 4. Ce qui respecte la règle passe
-
-```sh
-kubectl -n shopix get deploy shopix-front -o yaml | kubectl apply --dry-run=server -f -
-```
-
-**Ce que vous devez voir** — deployment.apps/shopix-front configured (server dry run).
-
-**Pourquoi** — --dry-run=server est l'outil à connaître pour tester une politique sur l'existant sans rien casser — et, sur Kapsule, sans réveiller ArgoCD. En production, on le complète par la CLI kyverno dans la CI : les manifestes sont testés contre les politiques avant même d'atteindre le cluster.
-
-
-### 5. En production, on ne commence jamais par Deny
-
-```sh
-kubectl patch validatingpolicies.policies.kyverno.io/shopix-bonnes-pratiques --type merge -p '{"spec":{"validationActions":["Warn","Audit"]}}'
-kubectl -n shopix run essai --image=nginx
-kubectl -n shopix get policyreport
-```
-
-❓ **Même nginx, en mode Warn. Refusé, accepté, ou autre chose ?**
-
-<details><summary>Réponse</summary>
-
-Accepté, avec un avertissement affiché par kubectl (« Warning: … ») ; et, en Audit, la non-conformité apparaît dans le rapport de politique du namespace.
-
-</details>
-
-**Ce que vous devez voir** — Le Pod est créé avec un avertissement ; le PolicyReport du namespace compte les résultats en échec (il peut mettre une trentaine de secondes à se remplir).
-
-**Pourquoi** — La trajectoire classique : Audit pour mesurer la dette (le rapport liste ce qui est déjà non conforme), Warn pour prévenir les équipes, Deny quand la dette est résorbée. C'est l'écho des « guardrails plutôt que des barrières » du Module 9. Les rapports sont lisibles par les outils de tableau de bord (Policy Reporter).
-
-**À retenir**
-
-- Le PSA applique des niveaux standard ; Kyverno applique VOS règles, écrites en YAML.
-- Elles se versionnent dans Git, se relisent en revue de code et se déploient par GitOps, comme le reste.
-- Et on les introduit en douceur : Warn et Audit d'abord, Deny ensuite.
-
-**Questions fréquentes**
-
-- *« Kyverno ou OPA Gatekeeper ? »* Même rôle (webhook d'admission). Gatekeeper utilise Rego, un langage à part ; Kyverno reste en YAML et, depuis la 1.19, en CEL. Et Kubernetes propose nativement les ValidatingAdmissionPolicy (CEL, sans rien installer), qui couvrent les cas simples de validation ; Kyverno ajoute la mutation, la génération de ressources, les rapports et la vérification de signatures d'images.
-- *« Et si Kyverno tombe ? »* C'est le point d'attention d'un webhook : selon sa politique d'échec, l'api-server refuse tout (Fail) ou laisse tout passer (Ignore). En production : plusieurs réplicas, et on exclut les namespaces système des règles.
-
-**Revenir à l'état de départ :** `automatique (politique et objets d'essai supprimés) ; retirer Kyverno : ./demos/j3-03-kyverno.sh --desinstaller`
 
 
 ---
