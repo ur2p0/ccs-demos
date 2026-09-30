@@ -1,6 +1,6 @@
 # Refaire les démonstrations, pas à pas
 
-Ce guide reprend les dix démonstrations de la formation. Pour chacune : ce qu'elle montre, le schéma de ce qui est déployé, puis chaque étape du script avec la commande exécutée, la question à se poser avant de la lancer, ce que vous devez voir et pourquoi.
+Ce guide reprend les onze démonstrations de la formation. Pour chacune : ce qu'elle montre, le schéma de ce qui est déployé, puis chaque étape du script avec la commande exécutée, la question à se poser avant de la lancer, ce que vous devez voir et pourquoi.
 
 > **Mode d'emploi.** Lancez le script indiqué : il affiche chaque commande et attend `Entrée` avant de l'exécuter (`q` pour sortir). Avant chaque ❓, faites votre pronostic *avant* de dévoiler la réponse. Le montage de l'environnement est décrit dans le [README](../README.md).
 
@@ -16,6 +16,7 @@ Ce guide reprend les dix démonstrations de la formation. Pour chacune : ce qu'e
 | [8](#démo-8) | Jour 2 | RBAC, PSA, Secrets : la preuve | `demos/j2-04-securite.sh` |
 | [9](#démo-9) | Jour 3 | La chasse au coupable | `demos/j3-01-observabilite.sh` |
 | [10](#démo-10) | Jour 3 | GitOps en action | `demos/j3-02-gitops.sh` |
+| [11](#démo-11) | Jour 3 | Shopix chez un fournisseur | `demos/j3-00-manage.sh` |
 
 ![Où tournent les démos](schemas/00-vue-ensemble.png)
 
@@ -1151,6 +1152,140 @@ kubectl -n argocd get applications -o custom-columns=NOM:…,SYNC:…,REVISION:�
 - *« ArgoCD ou Flux ? »* Même principe (un agent qui tire). ArgoCD a une interface qui parle aux équipes ; Flux est plus léger et tout en CRD. Les deux sont gradués CNCF.
 
 **Revenir à l'état de départ :** `git revert --no-edit HEAD && git push, puis Refresh dans ArgoCD : retour à 2 réplicas, avec l'historique complet.`
+
+
+---
+
+<a id="démo-11"></a>
+## Démo 11 — Shopix chez un fournisseur
+
+**Jour 3 · Module 6** · `./demos/j3-00-manage.sh`
+
+**Ce que la démo montre.** Montrer ce que « managé » veut dire concrètement : les mêmes manifestes qu'en local, réalisés par les services du fournisseur. Le plan de contrôle disparaît de la vue, les nœuds sont des instances, un Service devient un load balancer, un PVC devient un disque réseau qui suit le Pod d'un nœud à l'autre. Et c'est aussi la limite : ce qui est portable, c'est le YAML, pas le service qu'il commande.
+
+> **Prérequis :** un cluster Scaleway Kapsule (option payante) — voir « Option : sur un cluster managé Scaleway Kapsule » dans le [README](../README.md). Le script refuse de tourner ailleurs.
+
+![Démo 11 · Ce que le fournisseur fait de votre YAML](schemas/11a-manage-integration.png)
+
+
+### 1. Le même Shopix qu'en local, à trois lignes près
+
+```sh
+diff <(kubectl kustomize k8s/overlays/minikube) <(kubectl kustomize k8s/overlays/scaleway) | grep '^[<>]'
+```
+
+**Ce que vous devez voir** — Une poignée de lignes : les noms d'image (shopix:1.0.0 → rg.fr-par.scw.cloud/ccs-shopix/shopix:1.0.0), le PVC 1Gi → 5Gi, le nodeSelector stockage=oui qui disparaît, `type: LoadBalancer` sur shopix-front.
+
+**Pourquoi** — Kustomize : une base commune, un overlay par environnement. C'est la bonne pratique pour garder un seul manifeste de référence (Module 7, packaging). Le 5 Gi vient d'une taille minimale du stockage bloc ; le nodeSelector disparaît parce que le disque n'est plus local.
+
+
+### 2. Où est passé le cerveau ?
+
+```sh
+kubectl get pods -n kube-system
+```
+
+❓ **Au J1, on voyait l'api-server et etcd dans kube-system. Et ici ?**
+
+<details><summary>Réponse</summary>
+
+Ils n'y sont pas : le plan de contrôle est opéré par Scaleway, hors de vue. On ne voit que ce qui tourne sur nos nœuds (Cilium, CoreDNS, les agents CSI).
+
+</details>
+
+**Ce que vous devez voir** — cilium, coredns, csi-node, konnectivity-agent, metrics-server… mais ni kube-apiserver, ni etcd, ni kube-scheduler.
+
+**Pourquoi** — En managé, le fournisseur les opère, les sauvegarde et les met à jour (fenêtre de maintenance le dimanche à 3 h ici). En échange, on n'y a plus accès : pas de réglage fin d'etcd, pas de flags de l'api-server.
+
+
+### 3. Les nœuds sont des instances
+
+```sh
+kubectl get nodes -L node.kubernetes.io/instance-type -L topology.kubernetes.io/zone
+kubectl get nodes -o custom-columns=NOEUD:.metadata.name,INSTANCE:.spec.providerID
+# (pause) console → Kubernetes → le pool
+```
+
+**Ce que vous devez voir** — Deux nœuds DEV1-L en fr-par-1, et un providerID en scaleway://instance/…
+
+**Pourquoi** — Les étiquettes instance-type et zone sont posées par le fournisseur : c'est sur elles qu'on règle l'anti-affinité par zone ou le placement des Pods sur des nœuds GPU (démo 5). Dans la console, montrez le pool : taille, type, autohealing (un nœud malade est remplacé automatiquement).
+
+
+### 4. Le réseau : un vrai load balancer, commandé par Kubernetes
+
+```sh
+kubectl -n shopix get svc shopix-front
+kubectl -n shopix expose deploy shopix-front --name=vitrine --type=LoadBalancer --port=80 --target-port=8080 --labels=demo=vitrine
+kubectl -n shopix get svc vitrine
+kubectl -n shopix get events --field-selector involvedObject.name=vitrine
+# (pause) navigateur sur l'IP, puis console → Load Balancers
+kubectl -n shopix delete svc vitrine
+```
+
+❓ **Je déclare un second Service LoadBalancer. Combien de temps avant qu'il ait sa propre IP publique ?**
+
+<details><summary>Réponse</summary>
+
+Une à deux minutes : le temps que le cloud controller manager commande un load balancer à l'API Scaleway et qu'il soit provisionné. Le script affiche le délai réel.
+
+</details>
+
+**Ce que vous devez voir** — EXTERNAL-IP en <pending>, puis une IP publique ; les événements EnsuringLoadBalancer puis EnsuredLoadBalancer ; la boutique accessible sur cette IP ; le load balancer dans la console.
+
+**Pourquoi** — Le cloud controller manager est le composant du fournisseur qui fait le pont entre les objets Kubernetes et son API : Service → load balancer, nœud → instance. Sur Minikube, le même Service serait resté en <pending> pour toujours (d'où le tunnel du J2). C'est aussi un point FinOps : chaque Service LoadBalancer est une ressource facturée, d'où l'intérêt d'un seul Ingress ou d'une Gateway devant plusieurs applications.
+
+![Démo 11 · Le disque suit le Pod](schemas/11b-manage-disque.png)
+
+
+### 5. Le stockage : un disque réseau qui suit le Pod
+
+```sh
+kubectl get storageclass
+kubectl get pv -o custom-columns=VOLUME:…,TAILLE:…,PILOTE:.spec.csi.driver,RECLAMATION:…
+kubectl -n shopix exec deploy/shopix-commandes -- wget … '…/api/commandes?ref=SHX-900'
+kubectl get volumeattachment -o custom-columns=DISQUE:…,NOEUD:…,ATTACHE:…
+kubectl cordon <nœud du Pod>
+kubectl -n shopix delete pod -l composant=commandes --wait=false
+kubectl -n shopix get pod -l composant=commandes -o wide
+kubectl get volumeattachment …
+kubectl -n shopix exec deploy/shopix-commandes -- wget -q -O- …/api/commandes
+kubectl uncordon <nœud>
+```
+
+❓ **Au J2, en local, le Pod devait revenir sur le même nœud. Ici, il part sur l'autre. Retrouvera-t-il SHX-900 ?**
+
+<details><summary>Réponse</summary>
+
+Oui : le disque se détache du premier nœud et se rattache au second, en 30 à 60 secondes. Autre nœud, même disque, même donnée.
+
+</details>
+
+**Ce que vous devez voir** — La StorageClass par défaut du fournisseur, un PV servi par le pilote CSI Scaleway, le VolumeAttachment sur le premier nœud, puis sur le second ; SHX-900 toujours là.
+
+**Pourquoi** — C'est exactement ce qui était impossible au J2 (le bandeau de 07b) : en local, le volume est un répertoire du nœud. Ici, le pilote CSI traduit le PVC en disque bloc Scaleway, et Kubernetes orchestre le détachement et le rattachement. `kubectl cordon` est le geste de début de maintenance d'un nœud ; `drain` irait plus loin en évacuant tous les Pods. Montrez le volume pvc-… dans la console, rubrique Block Storage.
+
+
+### 6. Et tout cela a un prix
+
+```sh
+# (pause) console → Facturation
+```
+
+**Ce que vous devez voir** — La consommation du jour : environ 2 € pour les nœuds, quelques dizaines de centimes pour le load balancer, quelques centimes pour le disque.
+
+**Pourquoi** — Transition vers le FinOps du Module 9 : la facture se lit par ressource, et chaque objet Kubernetes qui commande une ressource du fournisseur (Service LoadBalancer, PVC) a un coût. Le plan de contrôle Kapsule est gratuit dans cette offre ; ce n'est pas le cas partout (EKS le facture à l'heure).
+
+**À retenir**
+
+- Les manifestes sont portables ; leur réalisation dépend du fournisseur : load balancer, disque, registre, instances.
+- C'est la force du managé… et le début de la dépendance : ce qui est portable, c'est le YAML, pas le service qu'il commande.
+
+**Questions fréquentes**
+
+- *« Et si on change de fournisseur ? »* Les manifestes suivent, à l'overlay près : StorageClass, annotations du load balancer, nom du registre. Ce qui ne suit pas, ce sont les services managés consommés à côté (base de données, IAM, files de messages). C'est la stratégie de sortie du Module 5.
+- *« Le plan de contrôle est-il facturé ? »* Chez Scaleway, pas dans l'offre utilisée ici ; chez AWS, EKS facture le plan de contrôle à l'heure ; les offres varient, et c'est un critère de choix du Module 6.
+
+**Revenir à l'état de départ :** `automatique (nœud rouvert, vitrine supprimée) ; à la main : kubectl uncordon <nœud> && kubectl -n shopix delete svc vitrine`
 
 
 ---

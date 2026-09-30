@@ -1,7 +1,7 @@
 # Containers, Kubernetes, GitOps — les démonstrations
 
 Tout ce qui a été manipulé en direct pendant les trois jours de formation, pour le refaire chez vous :
-l'application fil rouge **Shopix**, le cluster qui l'héberge, et dix démonstrations guidées.
+l'application fil rouge **Shopix**, le cluster qui l'héberge, et onze démonstrations guidées.
 
 👉 **Le guide pas à pas, avec les schémas : [`docs/DEMOS.md`](docs/DEMOS.md)**. Pour chaque démonstration :
 ce qu'elle montre, ce qui est déployé, chaque commande, la question à se poser avant de la lancer, ce que
@@ -9,7 +9,7 @@ vous devez voir et pourquoi.
 
 ![Où tournent les démos](docs/schemas/00-vue-ensemble.png)
 
-## Les dix démonstrations
+## Les onze démonstrations
 
 | # | Jour | Démonstration | Script | Il faut |
 |---|---|---|---|---|
@@ -23,6 +23,7 @@ vous devez voir et pourquoi.
 | 8 | 2 | RBAC, Pod Security, Secrets | `demos/j2-04-securite.sh` | cluster local |
 | 9 | 3 | La chasse au coupable (Prometheus, Loki, Grafana) | `demos/j3-01-observabilite.sh` | pile du jour 3 |
 | 10 | 3 | GitOps en action (ArgoCD) | `demos/j3-02-gitops.sh` | pile du jour 3 + votre fork |
+| 11 | 3 | Shopix chez un fournisseur (load balancer, disque réseau, plan de contrôle managé) | `demos/j3-00-manage.sh` | cluster Kapsule (option) |
 
 Le guide se termine par six manipulations sans script : DaemonSet, StatefulSet, HPA, ConfigMap,
 rolling update et rollback, ResourceQuota.
@@ -125,6 +126,8 @@ terraform apply -var registre=ccs-shopix-<votre-pseudo>   # le nom du registre e
 cd .. && ./setup/10-kapsule-j3.sh                          # image amd64, Shopix, pile J3, autotest (~20 min)
 ```
 
+La démonstration 11 (`./demos/j3-00-manage.sh`) montre alors ce que le fournisseur fait de vos manifestes : plan de contrôle opéré, load balancer commandé par un Service, disque réseau qui suit le Pod d'un nœud à l'autre.
+
 Détails dans [`terraform/README.md`](terraform/README.md). **Et à la fin, sans faute :**
 `cd terraform && terraform destroy` — un cluster oublié trois semaines coûte une cinquantaine d'euros.
 
@@ -151,7 +154,7 @@ Détails dans [`terraform/README.md`](terraform/README.md). **Et à la fin, sans
 | `k8s/overlays/` | `minikube` et `scaleway` : le même Shopix, deux environnements (Kustomize) |
 | `k8s/demos/` | les objets créés ponctuellement pendant une démonstration |
 | `k8s/observabilite/` | ServiceMonitor, source Loki, tableau de bord Grafana |
-| `demos/` | les dix scripts guidés, plus `reset.sh` |
+| `demos/` | les onze scripts guidés, plus `reset.sh` |
 | `setup/` | préparation, vérification et arrêt de l'environnement |
 | `lib/demo.sh` | la mécanique des scripts (affichage, pauses, questions) |
 | `terraform/` | le cluster Scaleway Kapsule, à créer et détruire à la demande |

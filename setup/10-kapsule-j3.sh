@@ -101,7 +101,7 @@ run "kubectl -n $NS get pods -o wide"
 attendre_que "le LoadBalancer reçoit une IP publique" \
   "[ -n \"\$(kubectl -n $NS get svc shopix-front -o jsonpath='{.status.loadBalancer.ingress[0].ip}')\" ]"
 IP_PUB=$(kubectl -n "$NS" get svc shopix-front -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-ok "Boutique : http://$IP_PUB    ← à montrer en séance, c'est une vraie IP publique"
+ok "Boutique : http://$IP_PUB:8080    ← à montrer en séance, c'est une vraie IP publique"
 
 # ------------------------------------------------------ 5. les piles du J3
 ./setup/04-observabilite.sh || { ko "pile d'observabilité en échec"; exit 1; }
@@ -121,7 +121,7 @@ titre "Ce qu'il reste à faire"
 note "1. le chemin contient des espaces — gardez les guillemets :"
 echo "     export KUBECONFIG=\"$KUBE\""
 note "2. ./setup/08-acces-j3.sh      dans un terminal dédié (Grafana 3000, ArgoCD 8080)"
-note "3. la boutique publique : http://$IP_PUB"
+note "3. la boutique publique : http://$IP_PUB:8080"
 echo
 note "Et à la fin de la session, sans faute :"
 echo "     cd terraform && terraform destroy"
