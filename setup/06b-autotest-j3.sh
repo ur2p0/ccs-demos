@@ -65,8 +65,8 @@ if ! patienter 90 "kubectl -n $NS get pod tools -o jsonpath='{.status.phase}' | 
   ko "le Pod « tools » ne démarre pas — les tests qui passent par lui sont impossibles."
   kubectl -n "$NS" get pod tools -o wide 2>&1 | sed 's/^/     /'
   kubectl -n "$NS" describe pod tools 2>/dev/null | grep -A4 "Events:" | sed 's/^/     /'
-  note "Sur Kapsule, l'image doit venir du registre : vérifiez newName dans"
-  note "k8s/overlays/scaleway/kustomization.yaml, ou exportez IMAGE_SHOPIX."
+  note "Sur un cluster managé, l'image doit venir du registre : vérifiez newName dans"
+  note "$(overlay_cluster)/kustomization.yaml, ou exportez IMAGE_SHOPIX."
   exit 1
 fi
 

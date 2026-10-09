@@ -58,5 +58,5 @@ note "Vérification du manifeste (les deux architectures doivent apparaître) :"
 docker buildx imagetools inspect "$CIBLE" 2>/dev/null | grep -E "Platform|Name:" | head -12
 
 echo
-note "Reportez ce nom dans k8s/overlays/scaleway/kustomization.yaml (champ newName) :"
+note "Reportez ce nom dans k8s/overlays/scaleway (ou gke)/kustomization.yaml, champ newName — 10-kapsule-j3.sh et 10-gke-j3.sh le font eux-mêmes :"
 echo "      newName: $REGISTRE/shopix"

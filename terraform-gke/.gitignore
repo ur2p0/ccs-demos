@@ -1,0 +1,6 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+kubeconfig.yaml
+*.tfvars
+gke_gcloud_auth_plugin_cache

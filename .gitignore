@@ -10,6 +10,15 @@ terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/kubeconfig.yaml
 terraform/*.tfvars
+terraform-gke/.terraform/
+terraform-gke/*.tfstate
+terraform-gke/*.tfstate.*
+terraform-gke/kubeconfig.yaml
+# jeton OAuth mis en cache par gke-gcloud-auth-plugin, à côté du kubeconfig
+terraform-gke/gke_gcloud_auth_plugin_cache
+terraform-gke/*.tfvars
+# dossier de transfert temporaire (à supprimer)
+.tmp-gke/
 
 # Runbook d'animation : document de préparation personnel (nom, client, tarifs
 # éventuels). ArgoCD n'en a pas besoin — il reste dans iCloud.

@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: https://github.com/ur2p0/ccs-demos.git
     targetRevision: main
-    path: k8s/overlays/scaleway
+    path: k8s/overlays/gke
   destination:
     server: https://kubernetes.default.svc
     namespace: shopix

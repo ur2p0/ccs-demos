@@ -40,13 +40,13 @@ esac
 # Filet : l'« outil » déposé dans /tmp disparaît avec le Pod ; on remplace le Pod à la fin
 # pour repartir d'une image propre — exactement ce qu'on ferait après un incident.
 # On supprime les Pods (le ReplicaSet les recrée) plutôt qu'un rollout restart : la spec ne change
-# pas, donc ArgoCD n'y voit aucune dérive sur Kapsule.
+# pas, donc ArgoCD n'y voit aucune dérive sur le cluster managé.
 nettoyer() { kubectl -n "$NS" delete pod -l composant=api --wait=false >/dev/null 2>&1; }
 
 annoncer_cluster
 if [ "$(type_cluster)" = "minikube" ]; then
   note "Sur Minikube (Docker Desktop), le pilote eBPF de Falco dépend du noyau de la VM : non garanti."
-  note "La démonstration est prévue pour Kapsule."
+  note "La démonstration est prévue pour un cluster managé (Kapsule ou GKE)."
 fi
 titre "L'alarme : la détection à l'exécution (Module 8)"
 installer_falco

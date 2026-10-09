@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shopix
+resources:
+  - ../../base
+# Sur GKE, l'image vient d'Artifact Registry — et elle DOIT contenir une variante amd64 :
+# les nœuds GKE sont en x86_64, un Mac Apple Silicon produit du arm64.
+# ./setup/10-gke-j3.sh construit l'image et inscrit lui-même le bon nom ici.
+images:
+  - name: shopix
+    newName: europe-west9-docker.pkg.dev/ccs-formation/shopix/shopix
+    newTag: 1.0.0
+patches:
+  # Un disque persistant Google (pd-balanced, la StorageClass par défaut « standard-rwo »)
+  # fait au minimum 10 Go : on demande 10 Gi, quelques centimes par jour.
+  - target: { kind: PersistentVolumeClaim, name: shopix-commandes }
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 10Gi
+  # Le disque est un volume réseau : le Pod n'a plus besoin de revenir sur le même nœud.
+  - target: { kind: Deployment, name: shopix-commandes }
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+  # Un vrai répartiteur de charge Google Cloud, avec une IP publique.
+  - target: { kind: Service, name: shopix-front }
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: LoadBalancer

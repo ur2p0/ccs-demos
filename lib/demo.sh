@@ -144,15 +144,38 @@ exiger() {
 #
 # La détection ne se fie pas au nom du contexte (qu'on renomme, qu'on duplique) mais
 # à une trace que seul l'outil pose : minikube étiquette tous ses nœuds avec
-# minikube.k8s.io/version, et Kapsule renseigne spec.providerID en « scaleway://… ».
+# minikube.k8s.io/version, Kapsule renseigne spec.providerID en « scaleway://… »
+# et GKE en « gce://… ».
 type_cluster() {
+  local pid
   if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' 2>/dev/null | grep -q 'minikube\.k8s\.io'; then
-    printf 'minikube'
-  elif kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' 2>/dev/null | grep -q '^scaleway'; then
-    printf 'kapsule'
-  else
-    printf 'inconnu'
+    printf 'minikube'; return
   fi
+  pid=$(kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' 2>/dev/null)
+  case "$pid" in
+    scaleway*) printf 'kapsule' ;;
+    gce*)      printf 'gke' ;;
+    *)         printf 'inconnu' ;;
+  esac
+}
+
+# Le J3 tourne sur un cluster managé : Kapsule (Scaleway) ou GKE (Google Cloud).
+# Les scripts du J3 acceptent l'un ou l'autre ; ces petites fonctions donnent ce qui
+# change d'un fournisseur à l'autre.
+est_manage() { case "$(type_cluster)" in kapsule|gke) return 0 ;; *) return 1 ;; esac; }
+overlay_cluster() {
+  case "${1:-$(type_cluster)}" in
+    kapsule) printf 'k8s/overlays/scaleway' ;;
+    gke)     printf 'k8s/overlays/gke' ;;
+    *)       printf 'k8s/overlays/minikube' ;;
+  esac
+}
+fournisseur() {
+  case "${1:-$(type_cluster)}" in
+    kapsule) printf 'Scaleway' ;;
+    gke)     printf 'Google Cloud' ;;
+    *)       printf 'le fournisseur' ;;
+  esac
 }
 
 # Informatif : dit à quel cluster on parle, sans rien interdire.
@@ -163,6 +186,7 @@ annoncer_cluster() {
   case "$t" in
     minikube) note "cluster : Minikube (contexte $ctx)" ;;
     kapsule)  note "cluster : Kapsule / Scaleway (contexte $ctx)" ;;
+    gke)      note "cluster : GKE / Google Cloud (contexte $ctx)" ;;
     *)        note "cluster : non identifié (contexte ${ctx:-aucun})" ;;
   esac
 }
@@ -173,6 +197,8 @@ exiger_cluster() {
   t=$(type_cluster)
   ctx=$(kubectl config current-context 2>/dev/null)
   [ "$t" = "$attendu" ] && return 0
+  # « manage » : n'importe quel cluster managé (Kapsule ou GKE)
+  if [ "$attendu" = "manage" ] && { [ "$t" = "kapsule" ] || [ "$t" = "gke" ]; }; then return 0; fi
   echo
   ko "mauvais cluster : ce script attend « $attendu », vous parlez à « $t »."
   note "contexte courant : ${ctx:-aucun}"
@@ -181,8 +207,9 @@ exiger_cluster() {
     note "Pour revenir au cluster local :"
     echo "     unset KUBECONFIG && kubectl config use-context ccs"
   else
-    note "Pour parler au cluster Kapsule :"
-    echo "     export KUBECONFIG=\$PWD/terraform/kubeconfig.yaml"
+    note "Pour parler au cluster managé :"
+    echo "     export KUBECONFIG=\"\$PWD/terraform/kubeconfig.yaml\"        # Kapsule"
+    echo "     export KUBECONFIG=\"\$PWD/terraform-gke/kubeconfig.yaml\"    # GKE"
   fi
   echo
   exit 1
@@ -198,10 +225,11 @@ appliquer_demo() {
   # Si la variable n'est pas là mais qu'on parle à Kapsule, on va chercher le nom
   # dans l'overlay : c'est lui qui porte la vérité, et ça évite de dépendre du fait
   # qu'un script parent ait pensé à exporter la variable.
-  if [ -z "${IMAGE_SHOPIX-}" ] && [ "$(type_cluster)" = "kapsule" ]; then
-    local _nom _tag
-    _nom=$(awk '/newName:/ {print $2; exit}' k8s/overlays/scaleway/kustomization.yaml 2>/dev/null)
-    _tag=$(awk '/newTag:/ {gsub(/"/,"",$2); print $2; exit}' k8s/overlays/scaleway/kustomization.yaml 2>/dev/null)
+  if [ -z "${IMAGE_SHOPIX-}" ] && est_manage; then
+    local _nom _tag _ov
+    _ov="$(overlay_cluster)/kustomization.yaml"
+    _nom=$(awk '/newName:/ {print $2; exit}' "$_ov" 2>/dev/null)
+    _tag=$(awk '/newTag:/ {gsub(/"/,"",$2); print $2; exit}' "$_ov" 2>/dev/null)
     [ -n "$_nom" ] && IMAGE_SHOPIX="$_nom:${_tag:-1.0.0}"
   fi
   if [ -n "${IMAGE_SHOPIX-}" ]; then

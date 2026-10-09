@@ -17,7 +17,7 @@ variable "region" {
 
 variable "zone" {
   type    = string
-  default = "fr-par-1"
+  default = "nl-ams-1"
 }
 
 variable "version_k8s" {

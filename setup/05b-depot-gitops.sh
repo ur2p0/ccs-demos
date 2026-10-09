@@ -33,7 +33,7 @@ DEPOT="${DEPOT-ccs-demos}"
 URL="${1-}"
 
 # Quel overlay ArgoCD doit-il suivre ? Celui du cluster auquel on parle.
-# Sur Kapsule, l'image vient du registre et le front est en LoadBalancer ; sur
+# Sur Kapsule ou GKE, l'image vient du registre et le front est en LoadBalancer ; sur
 # Minikube, l'image est chargée localement et l'accès passe par l'Ingress.
 CHEMIN="${CHEMIN-}"
 
@@ -43,6 +43,7 @@ annoncer_cluster
 if [ -z "$CHEMIN" ]; then
   case "$(type_cluster)" in
     kapsule) CHEMIN="k8s/overlays/scaleway" ;;
+    gke)     CHEMIN="k8s/overlays/gke" ;;
     *)       CHEMIN="k8s/overlays/minikube" ;;
   esac
 fi

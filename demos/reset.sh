@@ -6,7 +6,7 @@ source lib/demo.sh
 VITESSE=0
 NS="${NS-shopix}"
 
-# Un reset détruit des objets : on vérifie qu'on ne le lance pas sur Kapsule.
+# Un reset détruit des objets : on vérifie qu'on ne le lance pas sur le cluster managé.
 exiger_cluster minikube
 
 cible="${1---tout}"
