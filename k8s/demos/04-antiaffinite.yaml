@@ -20,6 +20,11 @@ spec:
             - labelSelector:
                 matchLabels: { composant: etale }
               topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: paiement
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       containers:
         - name: api
           image: shopix:1.0.0

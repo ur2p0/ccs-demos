@@ -60,9 +60,14 @@ if [ -z "$REGISTRE" ]; then
 fi
 ok "registre : $REGISTRE"
 
+# La clé vient de l'environnement, ou à défaut du profil de la CLI (scw init).
+if [ -z "${SCW_SECRET_KEY-}" ] && command -v scw >/dev/null 2>&1; then
+  SCW_SECRET_KEY=$(scw config get secret-key 2>/dev/null)
+  [ -n "$SCW_SECRET_KEY" ] && ok "clé du registre lue dans le profil scw"
+fi
 if [ -z "${SCW_SECRET_KEY-}" ]; then
-  ko "SCW_SECRET_KEY n'est pas dans l'environnement — nécessaire pour pousser l'image."
-  note "     export SCW_SECRET_KEY=…    (la même clé que pour Terraform)"
+  ko "SCW_SECRET_KEY introuvable (ni dans l'environnement, ni dans le profil scw) — nécessaire pour pousser l'image."
+  note "     scw init    ou    export SCW_SECRET_KEY=…    (la même clé que pour Terraform)"
   exit 1
 fi
 printf '%s' "$SCW_SECRET_KEY" \

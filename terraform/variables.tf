@@ -30,7 +30,7 @@ variable "version_k8s" {
   #   auto_maj = false          → version COMPLÈTE obligatoire, ex. « 1.34.3 »
   description = "Version de Kubernetes — mineure (1.34) si auto_maj, complète (1.34.3) sinon"
   type        = string
-  default     = "1.34"
+  default     = "1.35"
 }
 
 variable "auto_maj" {
@@ -57,7 +57,7 @@ variable "fenetre_heure" {
 variable "registre" {
   description = "Nom du namespace Container Registry — unique pour tout Scaleway"
   type        = string
-  default     = "ccs-shopix"
+  default     = "ccs-shopix-onurside"
 }
 
 variable "type_noeud" {
